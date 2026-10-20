@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger | Expense Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f0fdf9; --card: #ffffff; --text: #0b2e2a; --muted: #5b7c76;
+    --line: #d7ebe6; --accent: #0d9488; --accent-2: #14b8a6; --accent-3: #6366f1;
+    --bad: #dc2626; --ok: #16a34a; --warn: #f59e0b;
+    --radius: 16px; --shadow: 0 16px 36px -20px rgba(11,46,42,.35);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Manrope", system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  .container { max-width: 1240px; margin: 0 auto; padding: 0 20px; }
+
+  /* HEADER */
+  header { background: linear-gradient(120deg, #064e4a, var(--accent) 60%, var(--accent-2)); color: #fff; padding: 26px 0 70px; }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .brand { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; }
+  .brand small { display: block; font-size: .8rem; font-weight: 600; opacity: .8; letter-spacing: .04em; }
+  .month-picker { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.15); padding: 8px 14px; border-radius: 999px; backdrop-filter: blur(6px); }
+  .month-picker label { font-size: .85rem; font-weight: 600; }
+  .month-picker input { background: transparent; border: none; color: #fff; font: inherit; font-weight: 700; color-scheme: dark; }
+  .month-picker input:focus { outline: none; }
+
+  /* KPI CARDS (overlap the header) */
+  .kpis { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: -48px; position: relative; }
+  .kpi { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+  .kpi span { font-size: .8rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .kpi b { display: block; font-size: 1.8rem; margin-top: 6px; letter-spacing: -.02em; }
+  .kpi small { color: var(--muted); }
+  .kpi.hero-kpi b { color: var(--accent); }
+
+  /* LAYOUT */
+  main { padding: 28px 0 60px; }
+  .layout { display: grid; grid-template-columns: 380px 1fr; gap: 22px; align-items: start; }
+  .card { background: var(--card); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
+  .card h2 { font-size: 1.1rem; margin: 0 0 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .stack { display: grid; gap: 22px; }
+  .charts { display: grid; gap: 22px; grid-template-columns: 1fr 1fr; }
+  .muted { color: var(--muted); font-size: .9rem; }
+
+  /* FORMS */
+  .form { display: grid; gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  input, select { font: inherit; padding: 11px 13px; border: 1.5px solid var(--line); border-radius: 11px; background: #fff; color: var(--text); width: 100%; transition: border-color .2s, box-shadow .2s; color-scheme: light; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(13,148,136,.15); }
+  input.invalid, select.invalid { border-color: var(--bad); box-shadow: 0 0 0 4px rgba(220,38,38,.1); }
+  .err { color: var(--bad); font-size: .8rem; min-height: 1em; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .amount-wrap { position: relative; }
+  .amount-wrap span { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; pointer-events: none; }
+  .amount-wrap input { padding-left: 30px; }
+
+  .btn { font: inherit; font-weight: 700; padding: 12px 18px; border: none; border-radius: 11px; cursor: pointer; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; box-shadow: 0 8px 18px -10px rgba(13,148,136,.9); transition: transform .15s, opacity .15s; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: scale(.98); }
+  .btn.secondary { background: #e6f4f1; color: var(--text); box-shadow: none; }
+  .btn.danger { background: #fee2e2; color: var(--bad); box-shadow: none; }
+  .btn.small { padding: 6px 11px; font-size: .8rem; border-radius: 8px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .row-btns { display: flex; gap: 8px; }
+
+  /* CATEGORY BREAKDOWN */
+  .cat { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .cat:last-child { border: none; }
+  .cat-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+  .bar { height: 8px; background: #e6f4f1; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+  .bar span { display: block; height: 100%; width: 0; border-radius: 999px; transition: width .8s cubic-bezier(.22,1,.36,1); }
+  .cat-meta { font-size: .8rem; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; }
+  .over { color: var(--bad); font-weight: 700; }
+
+  /* TABLE */
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .toolbar input { flex: 1; min-width: 160px; }
+  .toolbar select { width: auto; min-width: 160px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; min-width: 620px; }
+  th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  td.amt { font-weight: 800; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: #f1f5f9; }
+  .empty { text-align: center; color: var(--muted); padding: 36px; }
+
+  /* SQL PANEL */
+  .sql { background: #052e2b; color: #99f6e4; border-radius: 14px; padding: 16px; font-family: Consolas, Menlo, monospace; font-size: .8rem; white-space: pre; overflow-x: auto; margin: 0; max-height: 240px; }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: #0b2e2a; color: #fff; padding: 12px 18px; border-radius: 12px; box-shadow: var(--shadow); opacity: 0; transform: translateY(12px); transition: all .3s; pointer-events: none; z-index: 50; max-width: 340px; }
+  .toast.show { opacity: 1; transform: none; }
+  .toast.error { background: var(--bad); }
+
+  /* RESPONSIVE */
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  @media (max-width: 720px) {
+    .charts { grid-template-columns: 1fr; }
+    .two { grid-template-columns: 1fr; }
+    .kpi b { font-size: 1.4rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container top">
+    <div class="brand">Ledger<small>EXPENSE TRACKER · SQLITE</small></div>
+    <div class="month-picker">
+      <label for="month">Viewing</label>
+      <input type="month" id="month">
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <div class="kpis">
+    <div class="kpi hero-kpi"><span>Spent this month</span><b id="kTotal">₹0</b><small id="kTotalSub">–</small></div>
+    <div class="kpi"><span>Transactions</span><b id="kCount">0</b><small>in selected month</small></div>
+    <div class="kpi"><span>Average expense</span><b id="kAvg">₹0</b><small>in selected month</small></div>
+    <div class="kpi"><span>Top category</span><b id="kTop" style="font-size:1.3rem">–</b><small id="kTopSub">–</small></div>
+  </div>
+
+  <main>
+    <div class="layout">
+      <!-- LEFT: forms -->
+      <div class="stack">
+        <form class="card form" id="expenseForm" novalidate>
+          <h2 id="formTitle">Add expense</h2>
+          <div class="field">
+            <label for="amount">Amount</label>
+            <div class="amount-wrap"><span>₹</span><input id="amount" type="number" step="0.01" min="0.01" max="10000000" placeholder="0.00"></div>
+            <div class="err" data-err="amount"></div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="category">Category</label>
+              <select id="category"></select>
+              <div class="err" data-err="category"></div>
+            </div>
+            <div class="field">
+              <label for="spentOn">Date</label>
+              <input id="spentOn" type="date">
+              <div class="err" data-err="spentOn"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="description">Description</label>
+            <input id="description" maxlength="80" placeholder="e.g. Grocery run at BigBasket">
+            <div class="err" data-err="description"></div>
+          </div>
+          <div class="row-btns">
+            <button class="btn" type="submit" id="submitBtn" style="flex:1">Save expense</button>
+            <button class="btn secondary" type="button" id="cancelEdit" hidden>Cancel</button>
+          </div>
+        </form>
+
+        <form class="card form" id="categoryForm" novalidate>
+          <h2>New category</h2>
+          <div class="two">
+            <div class="field">
+              <label for="catName">Name</label>
+              <input id="catName" maxlength="24" placeholder="e.g. Travel">
+              <div class="err" data-err="catName"></div>
+            </div>
+            <div class="field">
+              <label for="catBudget">Monthly budget</label>
+              <input id="catBudget" type="number" min="0" step="100" placeholder="5000">
+              <div class="err" data-err="catBudget"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="catColor">Colour</label>
+            <input id="catColor" type="color" value="#14b8a6" style="height:44px;padding:4px">
+          </div>
+          <button class="btn secondary" type="submit">Add category</button>
+        </form>
+      </div>
+
+      <!-- RIGHT: dashboard -->
+      <div class="stack">
+        <div class="charts">
+          <div class="card"><h2>Monthly totals <span class="muted">last 6 months</span></h2><canvas id="monthlyChart" height="220"></canvas></div>
+          <div class="card"><h2>By category <span class="muted">this month</span></h2><canvas id="categoryChart" height="220"></canvas></div>
+        </div>
+
+        <div class="card">
+          <h2>Budget tracking <span class="muted">this month</span></h2>
+          <div id="categoryBreakdown"></div>
+        </div>
+
+        <div class="card">
+          <h2>Expenses</h2>
+          <div class="toolbar">
+            <input id="search" type="search" placeholder="Search description…">
+            <select id="filterCat"></select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead>
+              <tbody id="expenseBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>SQL behind this page <span class="muted">last query</span></h2>
+          <pre class="sql" id="sqlView">-- Interact with the page to see the SQL here.</pre>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =====================================================
+   1. SCHEMA
+   ===================================================== */
+const SCHEMA = `
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE categories (
+  id     INTEGER PRIMARY KEY,
+  name   TEXT NOT NULL UNIQUE CHECK (length(name) BETWEEN 2 AND 24),
+  color  TEXT NOT NULL DEFAULT '#14b8a6',
+  budget INTEGER NOT NULL DEFAULT 0 CHECK (budget >= 0)
+);
+
+CREATE TABLE expenses (
+  id          INTEGER PRIMARY KEY,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+  amount      REAL NOT NULL CHECK (amount > 0),
+  description TEXT NOT NULL CHECK (length(description) >= 2),
+  spent_on    TEXT NOT NULL CHECK (spent_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+);
+
+CREATE INDEX idx_expenses_month ON expenses(spent_on);
+CREATE INDEX idx_expenses_category ON expenses(category_id);
+`;
+
+/* =====================================================
+   2. STATE & HELPERS
+   ===================================================== */
+let db;
+let editingId = null;
+let monthlyChart, categoryChart;
+const KEY = "ledger-db";
+const $ = id => document.getElementById(id);
+const fmt = n => "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const currentMonth = () => todayISO().slice(0, 7);
+
+function all(sql, params = []) {
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+}
+const run = (sql, params = []) => db.run(sql, params);
+
+function transaction(work) {
+  run("BEGIN");
+  try { const r = work(); run("COMMIT"); persist(); return r; }
+  catch (e) { run("ROLLBACK"); throw e; }
+}
+
+function persist() {
+  let bin = "";
+  for (const b of db.export()) bin += String.fromCharCode(b);
+  localStorage.setItem(KEY, btoa(bin));
+}
+
+function showSql(title, sql, params = []) {
+  $("sqlView").textContent = `-- ${title}\n${sql.trim()}\n\n-- params: ${JSON.stringify(params)}`;
+}
+
+// Shift a YYYY-MM by n months
+function shiftMonth(ym, n) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+const monthLabel = ym => {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+};
+
+/* =====================================================
+   3. SEED DATA
+   ===================================================== */
+function seed() {
+  transaction(() => {
+    const cats = [
+      ["Food", "#f97316", 9000], ["Transport", "#3b82f6", 3000],
+      ["Bills", "#8b5cf6", 6000], ["Shopping", "#ec4899", 4000],
+      ["Health", "#10b981", 2000], ["Fun", "#eab308", 2500]
+    ];
+    cats.forEach(c => run("INSERT INTO categories (name, color, budget) VALUES (?,?,?)", c));
+
+    const catId = name => all("SELECT id FROM categories WHERE name = ?", [name])[0].id;
+    const samples = [
+      ["Food", "Zomato dinner", 640], ["Food", "Weekly groceries", 2350], ["Food", "Coffee with team", 380],
+      ["Transport", "Metro card recharge", 500], ["Transport", "Cab to airport", 1150],
+      ["Bills", "Electricity bill", 1840], ["Bills", "Internet", 999], ["Bills", "Mobile recharge", 299],
+      ["Shopping", "Running shoes", 3200], ["Shopping", "Kitchen gadget", 1450],
+      ["Health", "Pharmacy", 420], ["Health", "Gym membership", 1500],
+      ["Fun", "Movie tickets", 760], ["Fun", "Weekend trip snacks", 540]
+    ];
+    // Spread expenses across the last 6 months, deterministic
+    for (let m = 5; m >= 0; m--) {
+      const ym = shiftMonth(currentMonth(), -m);
+      samples.forEach(([cat, desc, amt], i) => {
+        if ((i + m) % 3 === 0 && m !== 0) return; // some variety between months
+        const day = String(((i * 3 + m) % 27) + 1).padStart(2, "0");
+        const factor = m === 0 ? 1 : 0.8 + ((i + m) % 5) * 0.1;
+        run("INSERT INTO expenses (category_id, amount, description, spent_on) VALUES (?,?,?,?)",
+          [catId(cat), Math.round(amt * factor), desc, `${ym}-${day}`]);
+      });
+    }
+  });
+}
+
+/* =====================================================
+   4. VALIDATION
+   ===================================================== */
+function setErr(field, msg) {
+  const el = document.querySelector(`[data-err="${field}"]`);
+  if (el) el.textContent = msg || "";
+  const input = $(field);
+  if (input) input.classList.toggle("invalid", !!msg);
+}
+
+function validateExpense() {
+  const amount = Number($("amount").value);
+  const category = $("category").value;
+  const spentOn = $("spentOn").value;
+  const description = $("description").value.trim();
+  const e = {};
+  if (!$("amount").value) e.amount = "Enter an amount";
+  else if (!(amount > 0)) e.amount = "Amount must be greater than 0";
+  else if (amount > 10000000) e.amount = "Amount is too large";
+  else if (Math.round(amount * 100) !== amount * 100) e.amount = "Use at most 2 decimal places";
+  if (!category) e.category = "Choose a category";
+  if (!spentOn) e.spentOn = "Choose a date";
+  else if (spentOn > todayISO()) e.spentOn = "Date cannot be in the future";
+  if (description.length < 2) e.description = "Description needs at least 2 characters";
+  return { errors: e, values: { amount, category: Number(category), spentOn, description } };
+}
+
+function validateCategory() {
+  const name = $("catName").value.trim();
+  const budget = $("catBudget").value;
+  const e = {};
+  if (name.length < 2) e.catName = "Name needs at least 2 characters";
+  else if (all("SELECT 1 FROM categories WHERE lower(name) = lower(?)", [name]).length) e.catName = "That category already exists";
+  if (budget === "" || Number(budget) < 0) e.catBudget = "Enter a budget of 0 or more";
+  return { errors: e, values: { name, budget: Math.round(Number(budget) || 0), color: $("catColor").value } };
+}
+
+/* =====================================================
+   5. QUERIES
+   ===================================================== */
+// Populate category dropdowns from the categories table
+function renderCategoryOptions() {
+  const cats = all("SELECT id, name FROM categories ORDER BY name");
+  const opts = cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("category").innerHTML = `<option value="">Select…</option>${opts}`;
+  $("filterCat").innerHTML = `<option value="">All categories</option>${opts}`;
+}
+
+// KPI totals for the selected month: aggregate with GROUP BY-free SUM/COUNT
+function renderKpis(ym) {
+  const sql = `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n,
+                      COALESCE(AVG(amount),0) AS avg
+               FROM expenses WHERE strftime('%Y-%m', spent_on) = ?`;
+  showSql("KPI totals for the selected month", sql, [ym]);
+  const r = all(sql, [ym])[0];
+
+  const prevSql = `SELECT COALESCE(SUM(amount),0) AS total FROM expenses
+                   WHERE strftime('%Y-%m', spent_on) = ?`;
+  const prev = all(prevSql, [shiftMonth(ym, -1)])[0].total;
+  const diff = prev ? Math.round((r.total - prev) / prev * 100) : null;
+
+  $("kTotal").textContent = fmt(r.total);
+  $("kTotalSub").textContent = diff === null ? "No data last month"
+    : `${diff >= 0 ? "▲" : "▼"} ${Math.abs(diff)}% vs last month`;
+  $("kTotalSub").style.color = diff > 0 ? "var(--bad)" : "var(--ok)";
+  $("kCount").textContent = r.n;
+  $("kAvg").textContent = fmt(r.avg);
+
+  // Top category via JOIN
+  const topSql = `SELECT c.name, SUM(e.amount) AS total
+                  FROM expenses e JOIN categories c ON c.id = e.category_id
+                  WHERE strftime('%Y-%m', e.spent_on) = ?
+                  GROUP BY c.id ORDER BY total DESC LIMIT 1`;
+  const top = all(topSql, [ym])[0];
+  $("kTop").textContent = top ? top.name : "–";
+  $("kTopSub").textContent = top ? fmt(top.total) : "No expenses";
+}
+
+// Monthly totals for the last 6 months: GROUP BY strftime(month)
+function renderMonthlyChart(ym) {
+  const months = Array.from({ length: 6 }, (_, i) => shiftMonth(ym, i - 5));
+  const sql = `SELECT strftime('%Y-%m', spent_on) AS month,
+                      SUM(amount) AS total, COUNT(*) AS n
+               FROM expenses
+               WHERE spent_on >= ? AND spent_on < ?
+               GROUP BY month
+               ORDER BY month`;
+  const from = months[0] + "-01";
+  const to = shiftMonth(ym, 1) + "-01";
+  showSql("Monthly totals (GROUP BY)", sql, [from, to]);
+  const rows = all(sql, [from, to]);
+  const map = Object.fromEntries(rows.map(r => [r.month, r.total]));
+  const data = months.map(m => Math.round(map[m] || 0));
+
+  const config = {
+    labels: months.map(monthLabel),
+    datasets: [{
+      label: "Spent",
+      data,
+      backgroundColor: months.map(m => m === ym ? "#0d9488" : "#99f6e4"),
+      borderRadius: 8
+    }]
+  };
+  if (monthlyChart) { monthlyChart.data = config; monthlyChart.update(); }
+  else monthlyChart = new Chart($("monthlyChart"), {
+    type: "bar", data: config,
+    options: {
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmt(c.parsed.y) } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => "₹" + v.toLocaleString("en-IN") } }, x: { grid: { display: false } } }
+    }
+  });
+}
+
+// Category totals for the month: LEFT JOIN so empty categories still show
+function renderCategories(ym) {
+  const sql = `SELECT c.id, c.name, c.color, c.budget,
+                      COALESCE(SUM(e.amount), 0) AS spent
+               FROM categories c
+               LEFT JOIN expenses e
+                 ON e.category_id = c.id
+                AND strftime('%Y-%m', e.spent_on) = ?
+               GROUP BY c.id
+               ORDER BY spent DESC, c.name`;
+  showSql("Category totals (LEFT JOIN + GROUP BY)", sql, [ym]);
+  const rows = all(sql, [ym]);
+
+  $("categoryBreakdown").innerHTML = rows.map(c => {
+    const pct = c.budget ? Math.min(100, Math.round(c.spent / c.budget * 100)) : 0;
+    const over = c.budget && c.spent > c.budget;
+    return `
+      <div class="cat">
+        <div class="cat-head">
+          <span><span class="dot" style="background:${esc(c.color)}"></span>${esc(c.name)}</span>
+          <span class="${over ? "over" : ""}">${fmt(c.spent)} <span class="muted">/ ${fmt(c.budget)}</span></span>
+        </div>
+        <div class="bar"><span style="width:${pct}%;background:${over ? "var(--bad)" : esc(c.color)}"></span></div>
+        <div class="cat-meta"><span>${pct}% of budget${over ? " · over budget" : ""}</span>
+          <button class="btn danger small" data-delcat="${c.id}" title="Delete category">Delete</button></div>
+      </div>`;
+  }).join("") || `<div class="empty">No categories yet.</div>`;
+
+  const chartRows = rows.filter(r => r.spent > 0);
+  const config = {
+    labels: chartRows.map(r => r.name),
+    datasets: [{ data: chartRows.map(r => Math.round(r.spent)), backgroundColor: chartRows.map(r => r.color), borderWidth: 0 }]
+  };
+  if (categoryChart) { categoryChart.data = config; categoryChart.update(); }
+  else categoryChart = new Chart($("categoryChart"), {
+    type: "doughnut", data: config,
+    options: { cutout: "62%", plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: c => `${c.label}: ${fmt(c.parsed)}` } } } }
+  });
+}
+
+// Expense list: JOIN expenses to categories, with search and category filter
+function renderExpenses(ym) {
+  const q = $("search").value.trim();
+  const catId = $("filterCat").value;
+  let sql = `SELECT e.id, e.amount, e.description, e.spent_on,
+                    c.name AS category, c.color
+             FROM expenses e
+             JOIN categories c ON c.id = e.category_id
+             WHERE strftime('%Y-%m', e.spent_on) = ?`;
+  const params = [ym];
+  if (q) { sql += ` AND e.description LIKE ?`; params.push(`%${q}%`); }
+  if (catId) { sql += ` AND e.category_id = ?`; params.push(Number(catId)); }
+  sql += ` ORDER BY e.spent_on DESC, e.id DESC`;
+  showSql("Expense list (JOIN categories)", sql, params);
+
+  const rows = all(sql, params);
+  $("expenseBody").innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td>${r.spent_on}</td>
+      <td>${esc(r.description)}</td>
+      <td><span class="chip"><span class="dot" style="background:${esc(r.color)};margin:0"></span>${esc(r.category)}</span></td>
+      <td class="amt" style="text-align:right">${fmt(r.amount)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <div class="row-btns" style="justify-content:flex-end">
+          <button class="btn secondary small" data-edit="${r.id}">Edit</button>
+          <button class="btn danger small" data-del="${r.id}">Delete</button>
+        </div>
+      </td>
+    </tr>`).join("")
+    : `<tr><td colspan="5" class="empty">No expenses for this month. Add one on the left.</td></tr>`;
+}
+
+function refreshAll() {
+  const ym = $("month").value;
+  renderCategoryOptions();
+  renderKpis(ym);
+  renderMonthlyChart(ym);
+  renderCategories(ym);
+  renderExpenses(ym);
+}
+
+/* =====================================================
+   6. EVENTS
+   ===================================================== */
+$("expenseForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const { errors, values } = validateExpense();
+  ["amount", "category", "spentOn", "description"].forEach(f => setErr(f, errors[f]));
+  if (Object.keys(errors).length) return toast("Please fix the highlighted fields", true);
+
+  try {
+    transaction(() => {
+      if (editingId) {
+        const sql = `UPDATE expenses SET category_id=?, amount=?, description=?, spent_on=? WHERE id=?`;
+        run(sql, [values.category, values.amount, values.description, values.spentOn, editingId]);
+      } else {
+        const sql = `INSERT INTO expenses (category_id, amount, description, spent_on) VALUES (?,?,?,?)`;
+        run(sql, [values.category, values.amount, values.description, values.spentOn]);
+      }
+    });
+    toast(editingId ? "Expense updated" : "Expense saved");
+    // Jump to the month of the saved expense so the user sees it
+    $("month").value = values.spentOn.slice(0, 7);
+    resetForm();
+    refreshAll();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+function resetForm() {
+  editingId = null;
+  $("expenseForm").reset();
+  $("spentOn").value = todayISO();
+  $("spentOn").max = todayISO();
+  $("formTitle").textContent = "Add expense";
+  $("submitBtn").textContent = "Save expense";
+  $("cancelEdit").hidden = true;
+  document.querySelectorAll("#expenseForm .invalid").forEach(el => el.classList.remove("invalid"));
+  document.querySelectorAll("#expenseForm .err").forEach(el => el.textContent = "");
+}
+
+$("cancelEdit").addEventListener("click", resetForm);
+
+$("expenseBody").addEventListener("click", e => {
+  const edit = e.target.closest("[data-edit]");
+  const del = e.target.closest("[data-del]");
+  if (edit) {
+    const r = all(`SELECT * FROM expenses WHERE id = ?`, [edit.dataset.edit])[0];
+    editingId = r.id;
+    $("amount").value = r.amount;
+    $("category").value = r.category_id;
+    $("spentOn").value = r.spent_on;
+    $("description").value = r.description;
+    $("formTitle").textContent = "Edit expense";
+    $("submitBtn").textContent = "Update expense";
+    $("cancelEdit").hidden = false;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  if (del && confirm("Delete this expense?")) {
+    transaction(() => run(`DELETE FROM expenses WHERE id = ?`, [del.dataset.del]));
+    toast("Expense deleted");
+    refreshAll();
+  }
+});
+
+$("categoryForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const { errors, values } = validateCategory();
+  setErr("catName", errors.catName);
+  setErr("catBudget", errors.catBudget);
+  if (Object.keys(errors).length) return toast("Please fix the highlighted fields", true);
+  transaction(() => run(`INSERT INTO categories (name, color, budget) VALUES (?,?,?)`,
+    [values.name, values.color, values.budget]));
+  e.target.reset();
+  $("catColor").value = "#14b8a6";
+  toast(`Category "${values.name}" added`);
+  refreshAll();
+});
+
+// Foreign key (ON DELETE RESTRICT) blocks deleting categories that still have expenses
+$("categoryBreakdown").addEventListener("click", e => {
+  const btn = e.target.closest("[data-delcat]");
+  if (!btn) return;
+  if (!confirm("Delete this category? It must have no expenses.")) return;
+  try {
+    transaction(() => run(`DELETE FROM categories WHERE id = ?`, [btn.dataset.delcat]));
+    toast("Category deleted");
+  } catch (err) {
+    toast("Can't delete: this category still has expenses. Move or delete them first.", true);
+  }
+  refreshAll();
+});
+
+$("month").addEventListener("change", refreshAll);
+$("search").addEventListener("input", () => renderExpenses($("month").value));
+$("filterCat").addEventListener("change", () => renderExpenses($("month").value));
+
+// Validate on blur for a responsive feel
+["amount", "description", "spentOn", "category"].forEach(id => {
+  $(id).addEventListener("blur", () => {
+    const { errors } = validateExpense();
+    setErr(id, errors[id]);
+  });
+});
+
+let toastTimer;
+function toast(msg, isError = false) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.toggle("error", isError);
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 3000);
+}
+
+/* =====================================================
+   7. INIT
+   ===================================================== */
+async function init() {
+  const SQL = await initSqlJs({
+    locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${f}`
+  });
+  const saved = localStorage.getItem(KEY);
+  if (saved) {
+    db = new SQL.Database(Uint8Array.from(atob(saved), c => c.charCodeAt(0)));
+    run("PRAGMA foreign_keys = ON");
+  } else {
+    db = new SQL.Database();
+    db.exec(SCHEMA);
+    seed();
+  }
+  $("month").value = currentMonth();
+  $("month").max = currentMonth();
+  resetForm();
+  refreshAll();
+}
+
+init().catch(err => {
+  document.body.insertAdjacentHTML("afterbegin",
+    `<div style="background:#fee2e2;color:#991b1b;padding:14px;text-align:center">Could not start the database: ${esc(err.message)}</div>`);
+});
+</script>
+</body>
+</html>
